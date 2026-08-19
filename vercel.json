@@ -1,0 +1,27 @@
+{
+  "buildCommand": "echo 'Static site - no build needed'",
+  "outputDirectory": "public",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "ALLOWALL"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/index.html",
+      "destination": "/index.html"
+    }
+  ]
+}
