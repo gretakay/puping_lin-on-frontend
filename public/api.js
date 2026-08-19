@@ -296,6 +296,15 @@ async function getRecentDonationsLite(limit = 20) {
 }
 
 /**
+ * 獲取即期品（簡略版）
+ * @param {number} days 查詢天數
+ * @returns {Promise<object>} { success, data }
+ */
+async function getNearExpiryLite(days = 7) {
+  return apiGet('near_expiry', { days });
+}
+
+/**
  * 獲取位置資料（含地圖）
  */
 async function getLocationData() {
