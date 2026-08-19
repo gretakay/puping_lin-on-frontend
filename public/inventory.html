@@ -256,7 +256,11 @@
     let assetsCurrentPage = 1;
     let assetsTotalPages = 0;
     const MIN_SEARCH_CHARS = 2;
-    const ASSET_FETCH_PAGE_SIZE = 180;
+    // GAS 端 getAssetsDetails() 每次呼叫都會先算好「全部資產」才切頁回傳，
+    // 分頁完全不會減少後端運算量，只會白白增加來回次數（原本 904 筆要分 6 次序列請求）。
+    // 目前資料量（<1000 筆）遠低於單次回應的安全上限，改成一次拿完，
+    // 把「第一頁到就當作載入完成、背景默默載入其餘頁」導致的部分資料/數字不對問題也一併消除。
+    const ASSET_FETCH_PAGE_SIZE = 5000;
 
     // 預處理快取：避免每次輸入都重建 search 字串與映射
     let preparedSig = '';
