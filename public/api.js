@@ -95,9 +95,10 @@ function logError(...args) {
  * 執行帶重試的 fetch
  */
 async function fetchWithRetry(url, options = {}, retryCount = 0) {
+  let timeoutId = null;
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
+    timeoutId = setTimeout(() => controller.abort(), API_CONFIG.timeout);
 
     const response = await fetch(url, {
       ...options,
@@ -113,7 +114,7 @@ async function fetchWithRetry(url, options = {}, retryCount = 0) {
     const data = await response.json();
     return data;
   } catch (error) {
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
 
     // 重試邏輯
     if (retryCount < API_CONFIG.retryCount && error.name !== 'AbortError') {
