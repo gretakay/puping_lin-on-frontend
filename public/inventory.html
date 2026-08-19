@@ -371,6 +371,7 @@
         if (typeof err === 'string') return err;
         if (err.message) return err.message;
         if (err.cause && err.cause.message) return err.cause.message;
+        if (err.error) return err.error;
         if (err.toString) return err.toString();
         return JSON.stringify(err);
       } catch (e) { return '未知錯誤'; }
@@ -465,31 +466,18 @@
 
     function runAssetLocationSync(onDone) {
       setRefreshButtonState(true, '⌛ 同步櫃位中...');
-      const runner = google.script.run.withSuccessHandler(res => {
-        if (res && res.success) {
-          if (typeof onDone === 'function') onDone(true, res);
-          return;
-        }
-        const errMsg = (res && res.message) ? res.message : '同步回傳失敗';
-        if (typeof onDone === 'function') onDone(false, { message: errMsg, raw: res });
-      }).withFailureHandler(err => {
-        if (typeof onDone === 'function') onDone(false, { message: getErrMsg(err), raw: err });
-      });
-
-      // 相容舊部署：若新函式尚未部署，退回既有全量修復流程，避免前端直接 TypeError。
-      if (typeof runner.syncAssetSheetLocationsAndCaches === 'function') {
-        runner.syncAssetSheetLocationsAndCaches();
-        return;
-      }
-
-      if (typeof runner.hardRefreshAllCachesAndIndexes === 'function') {
-        runner.hardRefreshAllCachesAndIndexes();
-        return;
-      }
-
-      if (typeof onDone === 'function') {
-        onDone(false, { message: '後端尚未部署同步函式（syncAssetSheetLocationsAndCaches）' });
-      }
+      GAS_API.syncAssetSheetLocationsAndCaches()
+        .then(res => {
+          if (res && res.success) {
+            if (typeof onDone === 'function') onDone(true, res);
+            return;
+          }
+          const errMsg = getErrMsg(res) || '同步回傳失敗';
+          if (typeof onDone === 'function') onDone(false, { message: errMsg, raw: res });
+        })
+        .catch(err => {
+          if (typeof onDone === 'function') onDone(false, { message: getErrMsg(err), raw: err });
+        });
     }
 
     function manualSyncAssetLocations() {
@@ -514,12 +502,12 @@
     }
 
     function syncDataVersionFromServer(onDone) {
-      google.script.run.withSuccessHandler(v => {
-        lastDataVersion = String(v || '0');
+      GAS_API.getDataVersion().then(res => {
+        lastDataVersion = String((res && res.version) || '0');
         if (typeof onDone === 'function') onDone(true);
-      }).withFailureHandler(() => {
+      }).catch(() => {
         if (typeof onDone === 'function') onDone(false);
-      }).getDataVersion();
+      });
     }
 
     function runDeepRefresh() {
@@ -528,23 +516,30 @@
       scrapDetailsLoading = false;
 
       setRefreshButtonState(true, '⌛ 後端全量修復中...');
-      google.script.run.withSuccessHandler(res => {
-        setRefreshButtonState(true, '⌛ 前端重抓最新數據...');
-        loadData(true, 1, {
-          successMessage: '✅ 已完成全量修復與資料更新！',
-          onDone: function(ok) {
+      GAS_API.hardRefreshAllCachesAndIndexes()
+        .then(res => {
+          if (!res || res.success === false) {
             setRefreshButtonState(false, '🔄 重新整理數據');
-            if (ok) {
-              lastDataVersion = String((res && res.dataVersion) || lastDataVersion || '0');
-            } else {
-              alert('❌ 全量修復完成，但前端重抓失敗，請稍後再試。');
-            }
+            alert('❌ 後端全量修復失敗：' + getErrMsg(res));
+            return;
           }
+          setRefreshButtonState(true, '⌛ 前端重抓最新數據...');
+          loadData(true, 1, {
+            successMessage: '✅ 已完成全量修復與資料更新！',
+            onDone: function(ok) {
+              setRefreshButtonState(false, '🔄 重新整理數據');
+              if (ok) {
+                lastDataVersion = String((res && res.dataVersion) || lastDataVersion || '0');
+              } else {
+                alert('❌ 全量修復完成，但前端重抓失敗，請稍後再試。');
+              }
+            }
+          });
+        })
+        .catch(err => {
+          setRefreshButtonState(false, '🔄 重新整理數據');
+          alert('❌ 後端全量修復失敗：' + getErrMsg(err));
         });
-      }).withFailureHandler(err => {
-        setRefreshButtonState(false, '🔄 重新整理數據');
-        alert('❌ 後端全量修復失敗：' + getErrMsg(err));
-      }).hardRefreshAllCachesAndIndexes();
     }
 
     // 🔥 刷新全部数据：先快速刷新；失敗時再詢問是否做全量修復
@@ -617,7 +612,7 @@
       let assetsFirstPageReady = false;
 
       // API 1: 获取庫存詳細數據
-      google.script.run.withSuccessHandler(res => {
+      GAS_API.getInventoryDetails(true, force === true).then(res => {
         if (isStaleLoad()) return;
         if (!hasError && res && res.success) {
           rawInventory = res.inventory || [];
@@ -628,16 +623,16 @@
         } else {
           handleLoadError("庫存數據", res);
         }
-      }).withFailureHandler(err => {
+      }).catch(err => {
         if (isStaleLoad()) return;
         handleLoadError("庫存數據", err);
-      }).getInventoryDetails(true, force === true);
+      });
 
       // API 2: 獲取資產詳細數據（分頁加載）
       loadAssetsPage(1);
 
       // API 3: 獲取報廢統計數據（基礎版）
-      google.script.run.withSuccessHandler(res => {
+      GAS_API.getRecentActivity().then(res => {
         if (isStaleLoad()) return;
         if (res && res.success) {
           window.scrapRecent = [];  // 初始为空，按需加载
@@ -652,7 +647,7 @@
         }
         loadedCount++;
         checkAllLoaded();
-      }).withFailureHandler(err => {
+      }).catch(err => {
         if (isStaleLoad()) return;
         LOG.warn("⚠️ 報廢統計數據加載失敗：" + getErrMsg(err));
         window.scrapRecent = [];
@@ -660,7 +655,7 @@
         window.scrapByStatus = {};
         loadedCount++;
         checkAllLoaded();
-      }).getRecentActivity();
+      });
 
       function handleLoadError(apiName, error) {
         if (isStaleLoad()) return;
@@ -708,13 +703,13 @@
           preparedSig = '';
         }
         
-        google.script.run.withSuccessHandler(res => {
+        GAS_API.getAssetsDetails(page, ASSET_FETCH_PAGE_SIZE, force === true && page === 1).then(res => {
           if (isStaleLoad()) {
             localAssetsLoading = false;
             return;
           }
           localAssetsLoading = false;
-          
+
           if (!hasError && res && res.success) {
             // 追加本页数据
             rawAssetsFull = rawAssetsFull.concat(res.assets || []);
@@ -727,8 +722,8 @@
               loadedCount++;
               checkAllLoaded();
             }
-            
-            LOG.debug("✅ 資產數據加載：頁 " + assetsCurrentPage + "/" + assetsTotalPages + 
+
+            LOG.debug("✅ 資產數據加載：頁 " + assetsCurrentPage + "/" + assetsTotalPages +
                       ", 已加載 " + rawAssetsFull.length + " 項");
 
             // 若畫面已顯示，邊載邊刷新（降低等待感）
@@ -736,8 +731,8 @@
               updateSummaryCounts();
               processData();
             }
-            
-            // 如果還有更多頁，繼續加載 下一頁        
+
+            // 如果還有更多頁，繼續加載 下一頁
             if (res.hasMore) {
               const nextPage = assetsCurrentPage + 1;
               const msgEl2 = document.querySelector('#loading-overlay p');
@@ -752,14 +747,14 @@
           } else {
             handleLoadError("資產數據", res);
           }
-        }).withFailureHandler(err => {
+        }).catch(err => {
           if (isStaleLoad()) {
             localAssetsLoading = false;
             return;
           }
           localAssetsLoading = false;
           handleLoadError("資產數據", err);
-        }).getAssetsDetails(page, ASSET_FETCH_PAGE_SIZE, force === true && page === 1);  // 降低 API 次數，減少總覽等待時間
+        });
       }
     }
 
@@ -977,12 +972,21 @@
       const btn = document.getElementById('btn-export-' + type);
       const originalText = btn.innerHTML;
       btn.disabled = true; btn.innerHTML = '⌛ 產出報表中...';
-      google.script.run.withSuccessHandler(htmlContent => {
-        btn.disabled = false; btn.innerHTML = originalText;
-        const win = window.open("", "_blank");
-        if (win) { win.document.write(htmlContent); win.document.close(); }
-        else { alert("⚠️ 報表視窗被攔截！"); }
-      }).exportInventoryToHtml(effectiveType, key, filter, categoryFilter);
+      GAS_API.exportInventoryToHtml(effectiveType, key, filter, categoryFilter)
+        .then(res => {
+          btn.disabled = false; btn.innerHTML = originalText;
+          if (!res || !res.success) {
+            alert('❌ 匯出失敗：' + getErrMsg(res));
+            return;
+          }
+          const win = window.open("", "_blank");
+          if (win) { win.document.write(res.html); win.document.close(); }
+          else { alert("⚠️ 報表視窗被攔截！"); }
+        })
+        .catch(err => {
+          btn.disabled = false; btn.innerHTML = originalText;
+          alert('❌ 匯出失敗：' + getErrMsg(err));
+        });
     }
 
     function exportTxRange() {
@@ -1002,21 +1006,27 @@
       btn.disabled = true;
       btn.innerHTML = '⌛ 彙整交易紀錄中...';
 
-      google.script.run.withSuccessHandler(htmlContent => {
-        btn.disabled = false;
-        btn.innerHTML = originalText;
-        const win = window.open('', '_blank');
-        if (win) {
-          win.document.write(htmlContent);
-          win.document.close();
-        } else {
-          alert('⚠️ 報表視窗被攔截！');
-        }
-      }).withFailureHandler(err => {
-        btn.disabled = false;
-        btn.innerHTML = originalText;
-        alert('❌ 匯出失敗：' + getErrMsg(err));
-      }).exportTransactionHistoryByRange(s, e);
+      GAS_API.exportTransactionHistoryByRange(s, e)
+        .then(res => {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+          if (!res || !res.success) {
+            alert('❌ 匯出失敗：' + getErrMsg(res));
+            return;
+          }
+          const win = window.open('', '_blank');
+          if (win) {
+            win.document.write(res.html);
+            win.document.close();
+          } else {
+            alert('⚠️ 報表視窗被攔截！');
+          }
+        })
+        .catch(err => {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+          alert('❌ 匯出失敗：' + getErrMsg(err));
+        });
     }
 
     function initTxDateRangeDefault() {

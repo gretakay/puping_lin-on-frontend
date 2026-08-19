@@ -116,6 +116,17 @@
   <script>
     const state = { selected: null, locations: [] };
 
+    function getErrMsg(err) {
+      try {
+        if (!err) return '未知錯誤';
+        if (typeof err === 'string') return err;
+        if (err.message) return err.message;
+        if (err.error) return err.error;
+        if (err.toString) return err.toString();
+        return JSON.stringify(err);
+      } catch (e) { return '未知錯誤'; }
+    }
+
     function uuid() {
       if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
       return 'req-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
@@ -172,12 +183,17 @@
     function searchTransfer(forceEmpty) {
       const keyword = forceEmpty ? '' : document.getElementById('transferKeyword').value;
       document.getElementById('resultList').innerHTML = '<div class="result-card"><div class="result-meta">搜尋中...</div></div>';
-      google.script.run
-        .withSuccessHandler(res => renderResults((res && res.items) || []))
-        .withFailureHandler(err => {
-          document.getElementById('resultList').innerHTML = '<div class="result-card"><div class="result-meta">查詢失敗：' + String(err || '') + '</div></div>';
+      GAS_API.searchTransferCandidates(keyword, 20)
+        .then(res => {
+          if (!res || !res.success) {
+            document.getElementById('resultList').innerHTML = '<div class="result-card"><div class="result-meta">查詢失敗：' + getErrMsg(res) + '</div></div>';
+            return;
+          }
+          renderResults((res && res.items) || []);
         })
-        .searchTransferCandidates(keyword, 20);
+        .catch(err => {
+          document.getElementById('resultList').innerHTML = '<div class="result-card"><div class="result-meta">查詢失敗：' + getErrMsg(err) + '</div></div>';
+        });
     }
 
     function prepareSummary() {
@@ -259,12 +275,12 @@
       btn.disabled = true;
       btn.textContent = '移轉中...';
 
-      google.script.run
-        .withSuccessHandler(res => {
+      GAS_API.transferAsset(payload)
+        .then(res => {
           btn.disabled = false;
           btn.textContent = oldText;
           if (!res || !res.success) {
-            alert('移轉失敗：' + ((res && res.message) || '未知錯誤'));
+            alert('移轉失敗：' + getErrMsg(res));
             return;
           }
           alert('移轉完成：' + (res.message || '') + '\n移轉單號：' + (res.transferNo || '-') + (res.idempotent ? '\n此請求先前已完成。' : ''));
@@ -281,31 +297,38 @@
           setRequestId();
           searchTransfer(false);
         })
-        .withFailureHandler(err => {
+        .catch(err => {
           btn.disabled = false;
           btn.textContent = oldText;
-          alert('移轉失敗：' + String(err || ''));
-        })
-        .executeAssetTransfer(payload);
+          alert('移轉失敗：' + getErrMsg(err));
+        });
     }
 
     window.addEventListener('load', () => {
       setRequestId();
       searchTransfer(true);
 
-      google.script.run.withSuccessHandler(url => {
-        document.getElementById('topNav').innerHTML = `
-          <a href="${url}?page=index" target="_top">🏠 主選單</a>
-          <a href="${url}?page=inventory" target="_top">📊 總覽</a>
-          <a href="${url}?page=transfer" target="_top" class="active">↔️ 移轉</a>
-          <a href="${url}?page=stocktake-correction" target="_top">🧾 盤點校正</a>
-        `;
-      }).getScriptUrl();
+      const navItems = [
+        { key: 'index',        label: '🏠 主選單' },
+        { key: 'recent',       label: '📋 最近捐贈' },
+        { key: 'near-expiry',  label: '⏰ 即期品' },
+        { key: 'withdraw',     label: '📤 領借用' },
+        { key: 'asset_return', label: '🔙 歸還' },
+        { key: 'asset_entry',  label: '🛠️ 入庫' },
+        { key: 'inventory',    label: '📊 總覽' },
+        { key: 'transfer',     label: '↔️ 移轉' }
+      ];
+      document.getElementById('topNav').innerHTML = navItems
+        .map(it => `<a class="${it.key === 'transfer' ? 'active' : ''}" href="${it.key}.html">${it.label}</a>`)
+        .join('');
 
-      google.script.run.withSuccessHandler(list => {
-        state.locations = Array.isArray(list) ? list : [];
-        renderLocations(state.locations);
-      }).getTransferLocationList();
+      GAS_API.getTransferLocationList()
+        .then(res => {
+          const list = (res && res.success) ? res.list : [];
+          state.locations = Array.isArray(list) ? list : [];
+          renderLocations(state.locations);
+        })
+        .catch(err => console.error('❌ 位置列表載入失敗:', getErrMsg(err)));
 
       document.getElementById('searchBtn').addEventListener('click', () => searchTransfer(false));
       document.getElementById('transferKeyword').addEventListener('keydown', e => {

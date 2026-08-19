@@ -287,6 +287,7 @@
       if (!err) return '未知錯誤';
       if (typeof err === 'string') return err;
       if (err.message) return err.message;
+      if (err.error) return err.error;
       if (err.toString) return err.toString();
       return JSON.stringify(err);
     } catch (e) { return '未知錯誤'; }
@@ -465,10 +466,15 @@
     list.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b;"><div class="loader"></div><br>${loadMsg}</div>`;
 
     const startTime = Date.now();
-    google.script.run.withSuccessHandler(results => {
+    GAS_API.searchAssets(kw, force).then(res => {
+      if (!Array.isArray(res) && res && res.success === false) {
+        list.innerHTML = '<div style="text-align:center; padding:30px; color:#ef4444; font-weight:900;">❌ 查詢失敗：' + getErrMsg(res) + '<br><small style="margin-top:10px; display:block;">請重試或聯繫管理員</small></div>';
+        return;
+      }
+      const results = Array.isArray(res) ? res : [];
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       LOG.debug(`🔍 查詢完成，耗時 ${elapsed} 秒，找到 ${results.length} 筆結果`);
-      currentSearchResults = Array.isArray(results) ? results : [];
+      currentSearchResults = results;
       list.innerHTML = '';
       if (results.length === 0) {
         list.innerHTML = '<div style="text-align:center; padding:30px; color:#ef4444;">❌ 找不到相關資產<br><small>若是剛建檔，請點選上方紅色[重整]按鈕</small></div>';
@@ -496,9 +502,9 @@
         div.onclick = function() { selectAssetForRestock(item); };
         list.appendChild(div);
       });
-    }).withFailureHandler(err => {
+    }).catch(err => {
       list.innerHTML = '<div style="text-align:center; padding:30px; color:#ef4444; font-weight:900;">❌ 查詢失敗：' + getErrMsg(err) + '<br><small style="margin-top:10px; display:block;">請重試或聯繫管理員</small></div>';
-    }).searchAssetForRestock(kw, force);
+    });
   }
 
   function selectAssetForRestock(item) {
@@ -631,24 +637,24 @@
 
     const photoData = hiddenPhotoUrl.value; 
 
-    google.script.run
-      .withSuccessHandler(res => {
-        if(res.success) {
+    GAS_API.addAsset(pendingFormData)
+      .then(res => {
+        if(res && res.success) {
           form.classList.add('form-success');
           setTimeout(() => form.classList.remove('form-success'), 500);
           window.scrollTo({ top: 0, behavior: 'smooth' });
-          
+
           msg.style.background = "#f0fff4";
           msg.style.color = "#276749";
           msg.innerHTML = `🏆 <b>建檔成功！</b><br>編號：<span style="color:#2196F3; font-size:1.2em;">${escapeHtml(String(res.id || ''))}</span> <br><small>📍 位置：${escapeHtml(pendingFormData.location)}</small>`;
-          
+
           resetUI(pendingFormData);
 
           if (photoData && photoData.length > 0) {
             // 傳回的 res.sheet 為實際更新的工作表 key（合併時可能不同於使用者選的 location）
             const sheetKeyForPhoto = res.sheet || pendingFormData.location;
-            google.script.run
-              .withSuccessHandler(imgRes => {
+            GAS_API.uploadAssetPhoto(res.row, photoData, pendingFormData.itemName, pendingFormData.spec, sheetKeyForPhoto)
+              .then(imgRes => {
                 if (imgRes && imgRes.success) {
                   msg.innerHTML += `<br> ✅ 圖片已就緒`;
                 } else {
@@ -656,10 +662,9 @@
                   msg.innerHTML += `<br> ⚠️ 圖片未上傳成功：${err}`;
                 }
               })
-              .withFailureHandler(err => {
+              .catch(err => {
                 msg.innerHTML += `<br> ⚠️ 圖片背景同步失敗：${getErrMsg(err)}`;
-              })
-              .updateAssetPhotoInBackground(res.row, photoData, pendingFormData.itemName, pendingFormData.spec, sheetKeyForPhoto);
+              });
           }
         } else {
           msg.style.background = "#fff5f5";
@@ -669,12 +674,11 @@
           btn.innerHTML = "✅ 確認資料正確，送出建檔";
         }
       })
-      .withFailureHandler(err => {
+      .catch(err => {
         btn.disabled = false;
         btn.innerHTML = "✅ 確認資料正確，送出建檔";
         msg.textContent = "⚠️ 網路通訊錯誤：" + getErrMsg(err);
-      })
-      .importAssetFast(pendingFormData); 
+      });
   }
 
   function resetUI(formData) {

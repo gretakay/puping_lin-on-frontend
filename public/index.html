@@ -306,6 +306,7 @@
       if (!err) return '未知錯誤';
       if (typeof err === 'string') return err;
       if (err.message) return err.message;
+      if (err.error) return err.error;
       if (err.toString) return err.toString();
       return JSON.stringify(err);
     } catch (e) { return '未知錯誤'; }

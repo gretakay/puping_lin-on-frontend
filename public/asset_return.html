@@ -315,6 +315,7 @@
         if (!err) return '未知錯誤';
         if (typeof err === 'string') return err;
         if (err.message) return err.message;
+        if (err.error) return err.error;
         if (err.toString) return err.toString();
         return JSON.stringify(err);
       } catch (e) { return '未知錯誤'; }
@@ -812,15 +813,15 @@ function renderPaginatedList() {
         note: document.getElementById('noteInput').value || "歸還", 
         targetStatus: document.getElementById('targetStatus').value 
       };
-      google.script.run
-        .withSuccessHandler(res => {
+      GAS_API.returnAsset(data)
+        .then(res => {
           if (res && res.success) {
             btn.disabled = true;
             btn.classList.add('btn-success');
             btn.innerHTML = '<div class="loader"></div> 已完成，正在自動更新清單...';
             // 🔥 靜默預熱領借用頁快取（讓下次進入領用頁更快）
-            google.script.run.withSuccessHandler(() => {}).withFailureHandler(() => {}).getBorrowedAssets();
-            google.script.run.withSuccessHandler(() => {}).withFailureHandler(() => {}).getWithdrawInventory(false);
+            GAS_API.getBorrowedAssets().catch(() => {});
+            GAS_API.getWithdrawInventory(false).catch(() => {});
 
             // 自動重整歸還清單，免手動點「重整」
             setTimeout(() => {
@@ -842,20 +843,19 @@ function renderPaginatedList() {
           }
           btn.disabled = false;
           btn.innerHTML = '確認提交並更新庫存';
-          showToast('❌ 歸還失敗：' + ((res && res.message) ? res.message : '未知錯誤'), 'error');
+          showToast('❌ 歸還失敗：' + getErrMsg(res), 'error');
         })
-        .withFailureHandler(err => {
+        .catch(err => {
           btn.disabled = false;
           btn.innerHTML = '確認提交並更新庫存';
           showToast('❌ 系統錯誤：' + getErrMsg(err), 'error');
-        })
-        .returnAsset(data);
+        });
     }
 
     // 🚀 啟動項
     initLocation();
     load();
-    function renderTopNav(url, current) {
+    function renderTopNav(current) {
       const items = [
         { key: 'index',        label: '🏠 主選單' },
         { key: 'recent',       label: '📋 最近捐贈' },
@@ -866,13 +866,11 @@ function renderPaginatedList() {
         { key: 'inventory',    label: '📊 總覽' }
       ];
       document.getElementById('topNav').innerHTML = items
-        .map(it => `<a class="${it.key === current ? 'active' : ''}" target="_top" href="${url}?page=${it.key}">${it.label}</a>`)
+        .map(it => `<a class="${it.key === current ? 'active' : ''}" href="${it.key}.html">${it.label}</a>`)
         .join('');
     }
 
-    google.script.run.withSuccessHandler(url => {
-      renderTopNav(url, currentPage);
-    }).getScriptUrl();
+    renderTopNav(currentPage);
   </script>
 </body>
 </html>

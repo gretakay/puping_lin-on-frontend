@@ -263,6 +263,7 @@
         if (!err) return '未知錯誤';
         if (typeof err === 'string') return err;
         if (err.message) return err.message;
+        if (err.error) return err.error;
         if (err.toString) return err.toString();
         return JSON.stringify(err);
       } catch (e) { return '未知錯誤'; }
@@ -297,9 +298,7 @@
         localStorage.setItem('nineGridTargetLocAt', String(now));
       } catch (e) {}
 
-      google.script.run
-        .withFailureHandler(() => {})
-        .setNineGridTarget(cleanName);
+      GAS_API.setNineGridTarget(cleanName).catch(() => {});
     }
 
     function decorateListForUi(list) {
@@ -325,7 +324,7 @@
       const finishLoad = () => { isLoading = false; };
 
       const runGetInventory = (attempt = 1) => {
-        google.script.run.withSuccessHandler(res => {
+        GAS_API.getWithdrawInventory(isSangha).then(res => {
           if (res && res.success) {
             inv = decorateListForUi(res.inventory || []);
             buildTree();
@@ -344,19 +343,19 @@
           }
 
           console.error('❌ getWithdrawInventory 返回失敗：', res);
-          const errMsg = (res && res.message) || '未知錯誤（请查看 Console）';
+          const errMsg = getErrMsg(res);
           alert("❌ 數據載入失敗：" + errMsg + "\n\n请按 F12 查看 Console 获取详细信息");
           finishLoad();
-        }).withFailureHandler(err => {
+        }).catch(err => {
           if (attempt < 2) {
             console.warn('getWithdrawInventory 呼叫失敗，準備重試：', getErrMsg(err));
             setTimeout(() => runGetInventory(attempt + 1), 800);
             return;
           }
           console.error('❌ getWithdrawInventory 調用異常：', err);
-          alert("❌ 系統錯誤：" + (err.message || err.toString()) + "\n\n请按 F12 查看 Console 获取详细信息");
+          alert("❌ 系統錯誤：" + getErrMsg(err) + "\n\n请按 F12 查看 Console 获取详细信息");
           finishLoad();
-        }).getWithdrawInventory(isSangha);
+        });
       };
 
       runGetInventory();
@@ -373,7 +372,7 @@
       }
 
       const runGetAssets = (attempt = 1) => {
-        google.script.run.withSuccessHandler(res => {
+        GAS_API.getWithdrawAssets().then(res => {
           if (res && res.success) {
             assets = decorateListForUi(res.assets || []);
             assetsStale = false;
@@ -395,7 +394,7 @@
           if (selectEl) {
             selectEl.innerHTML = '<option value="">(固定資產載入失敗，請重新整理頁面)</option>';
           }
-        }).withFailureHandler(err => {
+        }).catch(err => {
           if (attempt < 2) {
             console.warn('getWithdrawAssets 呼叫失敗，準備重試：', getErrMsg(err));
             setTimeout(() => runGetAssets(attempt + 1), 800);
@@ -407,7 +406,7 @@
           if (selectEl) {
             selectEl.innerHTML = '<option value="">(固定資產載入失敗，請重新整理頁面)</option>';
           }
-        }).getWithdrawAssets();
+        });
       };
 
       runGetAssets();
@@ -415,20 +414,20 @@
 
     function startVersionPolling() {
       if (versionPollTimer) return;
-      google.script.run.withSuccessHandler(ver => {
-        lastDataVersion = String(ver || '0');
-      }).withFailureHandler(() => {}).getDataVersion();
+      GAS_API.getDataVersion().then(res => {
+        lastDataVersion = String((res && res.version) || '0');
+      }).catch(() => {});
 
       versionPollTimer = setInterval(() => {
         if (isLoading || document.hidden) return;
-        google.script.run.withSuccessHandler(ver => {
-          const nextVersion = String(ver || '0');
+        GAS_API.getDataVersion().then(res => {
+          const nextVersion = String((res && res.version) || '0');
           if (nextVersion !== lastDataVersion) {
             lastDataVersion = nextVersion;
             assetsStale = true;
             loadData();
           }
-        }).withFailureHandler(() => {}).getDataVersion();
+        }).catch(() => {});
       }, VERSION_POLL_MS);
     }
 
@@ -1185,8 +1184,8 @@
       };
       const submittedItems = cart.map(item => ({ ...item }));
 
-      google.script.run
-        .withSuccessHandler(res => {
+      GAS_API.withdrawItem(payload)
+        .then(res => {
           submitRequestPending = false;
           submitSlowWarned = false;
           if (submitWatchdog) { clearTimeout(submitWatchdog); submitWatchdog = null; }
@@ -1221,15 +1220,14 @@
             btn.innerHTML = '重試提交';
           }
         })
-        .withFailureHandler(err => {
+        .catch(err => {
           submitRequestPending = false;
           submitSlowWarned = false;
           if (submitWatchdog) { clearTimeout(submitWatchdog); submitWatchdog = null; }
-          alert("❌ 系統錯誤：" + getErrMsg(err)); 
-          btn.disabled = false; 
+          alert("❌ 系統錯誤：" + getErrMsg(err));
+          btn.disabled = false;
           btn.innerHTML = '重試提交';
-        })
-        .withdrawItem(payload); 
+        });
     }
 
     function showMap(locName) {
@@ -1297,7 +1295,7 @@
       }
     }
     initLocation(); loadData(); startVersionPolling(); refreshAssetActionUi();
-    function renderTopNav(url) {
+    function renderTopNav() {
       const items = [
         { key: 'index',        label: '🏠 主選單' },
         { key: 'recent',       label: '📋 最近捐贈' },
@@ -1308,13 +1306,11 @@
         { key: 'inventory',    label: '📊 總覽' }
       ];
       document.getElementById('topNav').innerHTML = items
-        .map(it => `<a class="${it.key === 'withdraw' ? 'active' : ''}" target="_top" href="${url}?page=${it.key}">${it.label}</a>`)
+        .map(it => `<a class="${it.key === 'withdraw' ? 'active' : ''}" href="${it.key}.html">${it.label}</a>`)
         .join('');
     }
 
-    google.script.run.withSuccessHandler(url => { 
-      renderTopNav(url);
-    }).getScriptUrl();
+    renderTopNav();
 
     function zoomImg(src) {
     const modal = document.getElementById('image-modal');

@@ -194,7 +194,9 @@ async function apiPost(endpoint, data = {}) {
     const response = await fetchWithRetry(API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        // 用 text/plain 避免瀏覽器發出 CORS preflight（GAS 不支援 doOptions）
+        // 後端仍會將 body 當 JSON 字串解析，不受 Content-Type 影響
+        'Content-Type': 'text/plain;charset=utf-8'
       },
       body: JSON.stringify(payload)
     });
@@ -302,10 +304,46 @@ async function getSummaryData() {
 }
 
 /**
- * 獲取領借用清單
+ * 獲取領借用清單（十方供養物）
+ * @param {boolean} includeSangha 是否包含供僧專用物資
  */
-async function getWithdrawInventory(forceRefresh = false) {
-  return apiGet('withdrawal_inventory', { forceRefresh: forceRefresh ? 'true' : 'false' });
+async function getWithdrawInventory(includeSangha = true) {
+  return apiGet('withdrawal_inventory', { includeSangha: includeSangha ? 'true' : 'false' });
+}
+
+/**
+ * 獲取領借用清單（固定資產）
+ */
+async function getWithdrawAssets() {
+  return apiGet('withdraw_assets');
+}
+
+/**
+ * 送出領/借用申請
+ */
+async function withdrawItem(payload) {
+  return apiPost('withdraw_item', payload);
+}
+
+/**
+ * 歸還資產
+ */
+async function returnAsset(data) {
+  return apiPost('asset_return', data);
+}
+
+/**
+ * 取得資料版本號（用於輪詢是否有更新）
+ */
+async function getDataVersion() {
+  return apiGet('data_version');
+}
+
+/**
+ * 發布九宮格導引目標位置（背景通知，不影響 UI）
+ */
+async function setNineGridTarget(locationName) {
+  return apiPost('nine_grid_target', { location: locationName });
 }
 
 /**
@@ -348,6 +386,19 @@ async function uploadPhoto(row, base64Data, itemName, spec, locationName) {
   });
 }
 
+/**
+ * 上傳資產照片（背景處理）
+ */
+async function uploadAssetPhoto(row, base64Data, itemName, spec, locationName) {
+  return apiPost('asset_photo_upload', {
+    row,
+    photoData: base64Data,
+    itemName,
+    spec,
+    locationName
+  });
+}
+
 // ==================== 資產查詢 ====================
 
 /**
@@ -380,13 +431,27 @@ async function findAssetRows(assetId) {
   return apiGet('asset_rows', { id: assetId });
 }
 
-// ==================== 資產操作（未實裝） ====================
+// ==================== 資產操作 ====================
 
 /**
- * 新增資產
+ * 新增資產（含補貨續號 / 超商批次模式）
  */
 async function addAsset(assetData) {
   return apiPost('asset_add', assetData);
+}
+
+/**
+ * 搜尋轉移候選資產
+ */
+async function searchTransferCandidates(keyword, limit = 20) {
+  return apiGet('transfer_search', { keyword, limit });
+}
+
+/**
+ * 取得轉移可用位置清單
+ */
+async function getTransferLocationList() {
+  return apiGet('transfer_location_list');
 }
 
 /**
@@ -394,6 +459,64 @@ async function addAsset(assetData) {
  */
 async function transferAsset(transferData) {
   return apiPost('asset_transfer', transferData);
+}
+
+// ==================== 庫存總覽 ====================
+
+/**
+ * 取得庫存詳細資料（十方供養物 + 即期品）
+ */
+async function getInventoryDetails(includeSangha = true, forceRefresh = false) {
+  return apiGet('inventory_details', {
+    includeSangha: includeSangha ? 'true' : 'false',
+    forceRefresh: forceRefresh ? 'true' : 'false'
+  });
+}
+
+/**
+ * 取得資產詳細資料（分頁）
+ */
+async function getAssetsDetails(page = 1, pageSize = 180, forceRefresh = false) {
+  return apiGet('assets_details', {
+    page,
+    pageSize,
+    forceRefresh: forceRefresh ? 'true' : 'false'
+  });
+}
+
+/**
+ * 取得報廢統計等最近活動摘要
+ */
+async function getRecentActivity() {
+  return apiGet('recent_activity');
+}
+
+/**
+ * 匯出庫存報表（回傳 HTML 內容字串）
+ */
+async function exportInventoryToHtml(type, keyword, filter, categoryFilter) {
+  return apiGet('export_inventory_html', { type, keyword, filter, categoryFilter });
+}
+
+/**
+ * 匯出區間交易紀錄（回傳 HTML 內容字串）
+ */
+async function exportTransactionHistoryByRange(start, end) {
+  return apiGet('export_tx_range', { start, end });
+}
+
+/**
+ * 同步資產表位置索引與快取
+ */
+async function syncAssetSheetLocationsAndCaches() {
+  return apiPost('sync_asset_locations', {});
+}
+
+/**
+ * 全量修復所有快取與索引
+ */
+async function hardRefreshAllCachesAndIndexes() {
+  return apiPost('hard_refresh', {});
 }
 
 // ==================== 公開 API ====================
@@ -424,11 +547,32 @@ window.GAS_API = {
   getBorrowedAssets,
   getSummaryData,
   getWithdrawInventory,
+  getWithdrawAssets,
   getScrapDetails,
   getLocationList,
   syncCategoryRules,
   addAsset,
   transferAsset,
+  uploadAssetPhoto,
+
+  // 領借用 / 歸還
+  withdrawItem,
+  returnAsset,
+  getDataVersion,
+  setNineGridTarget,
+
+  // 資產轉移
+  searchTransferCandidates,
+  getTransferLocationList,
+
+  // 庫存總覽
+  getInventoryDetails,
+  getAssetsDetails,
+  getRecentActivity,
+  exportInventoryToHtml,
+  exportTransactionHistoryByRange,
+  syncAssetSheetLocationsAndCaches,
+  hardRefreshAllCachesAndIndexes,
 
   // 配置
   config: API_CONFIG

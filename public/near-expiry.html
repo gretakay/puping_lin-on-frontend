@@ -206,7 +206,8 @@ function loadExpiryData() {
         .then(res => {
           const container = document.getElementById('list');
           if (!res || !res.success) {
-            container.innerHTML = `<div style="color:red; text-align:center;">❌ 載入失敗</div>`;
+            const errMsg = (res && (res.error || res.message)) || '未知錯誤';
+            container.innerHTML = `<div style="color:red; text-align:center;">❌ 載入失敗: ${errMsg}</div>`;
             return;
           }
 
