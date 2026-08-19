@@ -11,10 +11,12 @@
 // 未設定時退回使用下方預設值。
 
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbx3H3tiQ44DYtyfge22k3PdmTTxteC6bmTB38wU5pzXm7mdmcdZdv2NBesVHxBECM78/exec';
-const UPSTREAM_TIMEOUT_MS = 25000;
+// GAS 冷啟動（專案閒置一段時間後第一次被叫醒）實測要 20-37 秒，
+// 這裡給足夠的餘裕，避免把「還在跑、只是慢」誤判成逾時失敗。
+const UPSTREAM_TIMEOUT_MS = 55000;
 
 // 讓 Vercel 給這支 function 較長的執行時間，因為 GAS 本身有時偏慢
-module.exports.config = { maxDuration: 30 };
+module.exports.config = { maxDuration: 60 };
 
 module.exports = async (req, res) => {
   const gasUrl = process.env.GAS_API_URL || DEFAULT_GAS_URL;

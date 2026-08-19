@@ -24,7 +24,7 @@ if (typeof window === 'undefined') {
 let API_URL = ''; // 將在 initApiClient() 時設置
 
 const API_CONFIG = {
-  timeout: 30000, // 30 秒超時
+  timeout: 60000, // 60 秒超時（GAS 冷啟動有時要 20-40 秒，30 秒太短會誤判失敗）
   retryCount: 2,  // 失敗重試次數
   debug: false    // 調試模式
 };
