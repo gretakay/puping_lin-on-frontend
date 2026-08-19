@@ -15,10 +15,7 @@ const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbx3H3tiQ44DYtyf
 // 這裡給足夠的餘裕，避免把「還在跑、只是慢」誤判成逾時失敗。
 const UPSTREAM_TIMEOUT_MS = 55000;
 
-// 讓 Vercel 給這支 function 較長的執行時間，因為 GAS 本身有時偏慢
-module.exports.config = { maxDuration: 60 };
-
-module.exports = async (req, res) => {
+async function handler(req, res) {
   const gasUrl = process.env.GAS_API_URL || DEFAULT_GAS_URL;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
@@ -59,4 +56,9 @@ module.exports = async (req, res) => {
       error: (isTimeout ? 'GAS 上游逾時（超過 ' + (UPSTREAM_TIMEOUT_MS / 1000) + ' 秒）' : 'GAS 代理請求失敗: ' + err.message)
     });
   }
-};
+}
+
+// 一定要在 module.exports 已經指向最終的 handler 之後才附加 .config，
+// 順序顛倒的話 Vercel 讀不到，會直接套用它自己的預設逾時（遠低於 60 秒）
+handler.config = { maxDuration: 60 };
+module.exports = handler;
