@@ -11,13 +11,19 @@
 // 未設定時退回使用下方預設值。
 
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbx3H3tiQ44DYtyfge22k3PdmTTxteC6bmTB38wU5pzXm7mdmcdZdv2NBesVHxBECM78/exec';
+const UPSTREAM_TIMEOUT_MS = 25000;
+
+// 讓 Vercel 給這支 function 較長的執行時間，因為 GAS 本身有時偏慢
+module.exports.config = { maxDuration: 30 };
 
 module.exports = async (req, res) => {
   const gasUrl = process.env.GAS_API_URL || DEFAULT_GAS_URL;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
 
   try {
     let targetUrl = gasUrl;
-    const fetchOptions = { method: req.method, redirect: 'follow' };
+    const fetchOptions = { method: req.method, redirect: 'follow', signal: controller.signal };
 
     if (req.method === 'GET') {
       const queryIndex = req.url.indexOf('?');
@@ -30,18 +36,25 @@ module.exports = async (req, res) => {
       fetchOptions.body = body;
       fetchOptions.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
     } else {
+      clearTimeout(timeoutId);
       res.setHeader('Allow', 'GET, POST');
       res.status(405).json({ success: false, error: '不支援的方法: ' + req.method });
       return;
     }
 
     const gasRes = await fetch(targetUrl, fetchOptions);
+    clearTimeout(timeoutId);
     const text = await gasRes.text();
 
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
     res.status(gasRes.status).send(text);
   } catch (err) {
-    res.status(502).json({ success: false, error: 'GAS 代理請求失敗: ' + err.message });
+    clearTimeout(timeoutId);
+    const isTimeout = err.name === 'AbortError';
+    res.status(isTimeout ? 504 : 502).json({
+      success: false,
+      error: (isTimeout ? 'GAS 上游逾時（超過 ' + (UPSTREAM_TIMEOUT_MS / 1000) + ' 秒）' : 'GAS 代理請求失敗: ' + err.message)
+    });
   }
 };
