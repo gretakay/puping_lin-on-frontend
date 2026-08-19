@@ -37,10 +37,10 @@ const API_CONFIG = {
  */
 async function initApiClient() {
   try {
-    // 從全域變數讀取 API_URL（最高優先級）
+    // 從環境變數讀取 API_URL（如果存在）
     if (window.GAS_API_URL) {
       API_URL = window.GAS_API_URL;
-      logDebug('✅ API_URL 從全域變數讀取:', API_URL);
+      logDebug('✅ API_URL 從環境變數讀取:', API_URL);
       return true;
     }
 
@@ -52,42 +52,17 @@ async function initApiClient() {
       return true;
     }
 
-    // 自動推導 API_URL：如果在 GAS WebApp 中
+    // 自動推導 API_URL：如果在 GAS WebApp 中，使用當前頁面的 URL 作為 API 基址
     if (window.location.hostname.includes('script.google.com')) {
       API_URL = window.location.origin + window.location.pathname;
       localStorage.setItem('gasApiUrl', API_URL);
-      logDebug('✅ API_URL 自動推導 (GAS):', API_URL);
+      logDebug('✅ API_URL 自動推導:', API_URL);
       return true;
     }
 
-    // 如果在 Vercel/localhost，從 URL 參數讀取
-    const urlParam = new URLSearchParams(window.location.search).get('api');
-    if (urlParam) {
-      API_URL = urlParam;
-      localStorage.setItem('gasApiUrl', API_URL);
-      logDebug('✅ API_URL 從 URL 參數設置:', API_URL);
-      return true;
-    }
-
-    // 提示用戶需要設置 API URL
-    console.warn(
-      '⚠️ API_URL 未設置。\n' +
-      '請執行以下任一方式：\n' +
-      '1. 在 HTML 中設置：window.GAS_API_URL = "你的GAS API URL"\n' +
-      '2. URL 中傳遞：?api=https://script.google.com/macros/d/xxx/usercontent\n' +
-      '3. 本地儲存已有值'
+    throw new Error(
+      '❌ 無法自動推導 API_URL。請確保在 GAS 部署環境中運行此頁面。'
     );
-
-    // 提示對話框幫用戶設置
-    const apiUrl = prompt('請輸入 GAS API URL (格式: https://script.google.com/macros/d/{id}/usercontent):');
-    if (apiUrl) {
-      API_URL = apiUrl;
-      localStorage.setItem('gasApiUrl', API_URL);
-      logDebug('✅ API_URL 已設置:', API_URL);
-      return true;
-    }
-
-    throw new Error('API_URL 未設置，無法初始化 API 客戶端');
   } catch (error) {
     console.error('❌ API 客戶端初始化失敗:', error.message);
     return false;

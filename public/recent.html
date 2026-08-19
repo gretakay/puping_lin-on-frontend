@@ -102,10 +102,10 @@
     <p style="color:white; margin-top:15px; font-size: 0.9em;">(點擊任何處關閉)</p>
   </div>
 
-  <!-- 載入 API 配置 -->
-  <script src="config.js"></script>
   <!-- 載入 GAS API 客戶端 -->
-  <script src="api.js"></script>
+  <script>
+  <?!= HtmlService.createHtmlOutputFromFile('api').getContent() ?>
+  </script>
 
   <script>
   // 👤 捐贈者加密：傅小明 -> 傅O明，傅明 -> 傅O
